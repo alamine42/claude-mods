@@ -1,0 +1,18 @@
+{
+  "name": "my-actions",
+  "version": "0.1.0",
+  "description": "A band above the prompt that lists the actions and questions the agent left for you",
+  "author": {
+    "name": "Mehdi El-Amine"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "model": {
+      "type": "string",
+      "title": "Extraction model",
+      "description": "Model alias or id that reads each reply and updates the list",
+      "default": "haiku"
+    }
+  }
+}

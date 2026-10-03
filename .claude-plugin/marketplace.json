@@ -1,0 +1,23 @@
+{
+  "name": "claude-mods",
+  "owner": { "name": "Mehdi El-Amine" },
+  "metadata": {
+    "description": "Claude Code mods: a CI/CD pipeline pane and a box for the actions and questions the agent leaves for you"
+  },
+  "plugins": [
+    {
+      "name": "ci-pipeline",
+      "source": "./plugins/ci-pipeline",
+      "description": "A pane that shows where the current branch is in the CI/CD pipeline, from local dev to prod smoke tests",
+      "version": "0.1.0",
+      "category": "productivity"
+    },
+    {
+      "name": "my-actions",
+      "source": "./plugins/my-actions",
+      "description": "A box above the prompt that lists the actions and questions the agent left for you",
+      "version": "0.1.0",
+      "category": "productivity"
+    }
+  ]
+}

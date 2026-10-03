@@ -1,0 +1,42 @@
+{
+  "name": "ci-pipeline",
+  "version": "0.1.0",
+  "description": "A pane that shows where the current branch is in the CI/CD pipeline, from local dev to prod smoke tests",
+  "author": {
+    "name": "Mehdi El-Amine"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "deployStaging": {
+      "type": "string",
+      "title": "Staging deploy job",
+      "description": "Regex (case-insensitive) on 'workflow / job' names that deploy to staging",
+      "default": "deploy.*stag|stag.*deploy"
+    },
+    "smokeStaging": {
+      "type": "string",
+      "title": "Staging smoke test job",
+      "description": "Regex (case-insensitive) on 'workflow / job' names that smoke test staging",
+      "default": "smoke.*stag|stag.*smoke"
+    },
+    "deployProd": {
+      "type": "string",
+      "title": "Prod deploy job",
+      "description": "Regex (case-insensitive) on 'workflow / job' names that deploy to prod",
+      "default": "deploy.*prod|prod.*deploy"
+    },
+    "smokeProd": {
+      "type": "string",
+      "title": "Prod smoke test job",
+      "description": "Regex (case-insensitive) on 'workflow / job' names that smoke test prod",
+      "default": "smoke.*prod|prod.*smoke"
+    },
+    "pollSeconds": {
+      "type": "number",
+      "title": "Poll interval (seconds)",
+      "description": "How often to ask GitHub for new status",
+      "default": 20
+    }
+  }
+}
