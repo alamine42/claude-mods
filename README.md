@@ -80,12 +80,12 @@ Change them in the Claude Code config menu, or under `pluginConfigs.ci-pipeline`
 
 <!-- TODO: screenshot -->
 
-When you come back to a long session, the asks for you are easy to miss in the text. This mod lists them in a box above the prompt:
+When you come back to a long session, the asks for you are easy to miss in the text. This mod lists them above the prompt, in two boxes:
 
-- `▸` an action for you, such as a command to run or a PR to check. It shows the exact command when there is one.
-- `?` a question the agent waits on.
+- **To do** (`▸`): an action for you, such as a command to run or a PR to check. It shows the exact command when there is one.
+- **Questions** (`?`): a question the agent waits on.
 
-Each item has a **Done** button. When the box has focus, keys `1`–`9` press it. **Clear all** empties the list. The status line shows a count, for example `Your move: 2 actions, 1 question`.
+Each item has a **Done** button. When the box has focus, keys `1`–`9` press it. **Clear** empties one box. The boxes sit side by side when the window is wide enough. The status line shows a count, for example `Your move: 2 actions, 1 question`.
 
 **How it works.** When a reply ends, the mod sends the reply, your last message, and the open list to a small model. The model returns the new list. It adds new asks. It removes the asks that you answered or that the agent did. When the mod loads or a session resumes, it reads the last few messages.
 

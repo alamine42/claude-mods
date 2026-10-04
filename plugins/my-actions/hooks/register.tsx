@@ -112,6 +112,11 @@ async function bootstrap($: EngineInterface) {
   ].join('\n\n'), true)
 }
 
+async function clearKind($: EngineInterface, kind: ActionItem['kind']) {
+  await update($, items, l => l.filter(one => one.kind !== kind))
+  showStatus($, await read($, items))
+}
+
 const clip = (text: string, max: number) => (text.length > max ? `…${text.slice(-max)}` : text)
 
 export const register: Register = (on, options) => {
@@ -177,36 +182,67 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey || list.length === 0) return next(e)
 
     const { Box, Text, Button } = $.ui.resolve(e)
-    const room = Math.max(1, e.props.maxRows - 2)
-    const shown = list.slice(0, room)
+    const todos = list.filter(i => i.kind === 'action')
+    const questions = list.filter(i => i.kind === 'question')
+    const boxes = (todos.length ? 1 : 0) + (questions.length ? 1 : 0)
 
-    return (
-      <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-        <Box>
-          <Text bold color="yellow">Your move</Text>
-          <Text dimColor> · {list.length} open{busy ? ' · updating…' : ''}  </Text>
-          <Button key="clear" label="Clear all" plain onPress={() => dismiss($, null)} />
+    // Side by side when there is room, else one box above the other.
+    // Each box takes 4 rows for its border, its title and the blank line under it.
+    const isWide = boxes === 2 && e.props.bodyColumns >= 100
+    let todoRows: number
+    let askRows: number
+    if (isWide || boxes === 1) {
+      const room = Math.max(1, e.props.maxRows - 4)
+      todoRows = Math.min(todos.length, room)
+      askRows = Math.min(questions.length, room)
+    } else {
+      const room = Math.max(2, e.props.maxRows - 8)
+      askRows = Math.min(questions.length, Math.max(1, Math.floor(room / 2)))
+      todoRows = Math.min(todos.length, room - askRows)
+      askRows = Math.min(questions.length, room - todoRows)
+    }
+
+    const row = (item: ActionItem, n: number) => (
+      <Box>
+        <Text color={item.kind === 'question' ? 'cyan' : 'yellow'}>{item.kind === 'question' ? '? ' : '▸ '}</Text>
+        <Box flexGrow={1}>
+          <Text wrap="truncate-end">
+            {item.text}
+            {item.command ? <Text dimColor> `{item.command}`</Text> : null}
+          </Text>
         </Box>
-        {shown.map((item, i) => (
-          <Box>
-            <Text color={item.kind === 'question' ? 'cyan' : 'yellow'}>{item.kind === 'question' ? '? ' : '▸ '}</Text>
+        <Text> </Text>
+        <Button
+          key={`done-${item.id}`}
+          label="Done"
+          plain
+          hotkey={n <= 9 ? String(n) : undefined}
+          onPress={() => dismiss($, item.id)}
+        />
+      </Box>
+    )
+
+    const box = (kind: ActionItem['kind'], title: string, color: string, group: ActionItem[], shown: number, first: number, isFirst: boolean) =>
+      group.length > 0 && (
+        <Box flexDirection="column" flexGrow={1} borderStyle="round" borderColor={color} paddingX={1}>
+          <Box marginBottom={1}>
             <Box flexGrow={1}>
-              <Text wrap="truncate-end">
-                {item.text}
-                {item.command ? <Text dimColor> `{item.command}`</Text> : null}
+              <Text bold color={color}>
+                {title} ({group.length})
+                {group.length > shown ? <Text dimColor> · {group.length - shown} more</Text> : null}
+                {busy && isFirst ? <Text dimColor> · updating…</Text> : null}
               </Text>
             </Box>
-            <Text> </Text>
-            <Button
-              key={`done-${item.id}`}
-              label="Done"
-              plain
-              hotkey={i < 9 ? String(i + 1) : undefined}
-              onPress={() => dismiss($, item.id)}
-            />
+            <Button key={`clear-${kind}`} label="Clear" plain onPress={() => clearKind($, kind)} />
           </Box>
-        ))}
-        {list.length > shown.length && <Text dimColor>+{list.length - shown.length} more</Text>}
+          {group.slice(0, shown).map((item, i) => row(item, first + i))}
+        </Box>
+      )
+
+    return (
+      <Box flexDirection={isWide ? 'row' : 'column'}>
+        {box('action', 'To do', 'yellow', todos, todoRows, 1, true)}
+        {box('question', 'Questions', 'cyan', questions, askRows, todoRows + 1, todos.length === 0)}
       </Box>
     )
   })
