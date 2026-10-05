@@ -9,8 +9,14 @@ const isUpdating = atom({ plugin: 'my-actions', key: 'isUpdating' } as const, fa
 const SYSTEM = `You track the open to-do list that a coding agent has left for its human user.
 
 An item belongs on the list only when the HUMAN must do something:
-- "action": a thing the human must do outside the chat. Examples: run a command, merge or check a PR, set a secret, restart an app, approve something, test something by hand.
+- "action": a thing the human must do. Examples: run a command, merge or check a PR, set a secret, restart an app, test something by hand, look at the screen.
 - "question": a question the agent asked the human and is waiting on, or a choice the agent wants the human to make.
+
+A request for permission is a "question", not an "action". When the agent offers to do a task once the human says yes ("Tell me if you want me to commit and push", "Shall I change the setting?"), write it as a question: "Commit and push the box changes?".
+
+For each "action", set "owner":
+- "you": only the human can do it. Examples: look at the app, test by hand, type in a password, use an account or device the agent cannot reach, start a new session.
+- "agent": the agent has the tools to do it itself, but asked the human to. Examples: run a plain shell command in the repo, edit a file, check a PR with gh.
 
 Not items: work the agent did, work the agent says it will do, findings, summaries, and offers the agent makes in passing with no real need for an answer.
 
@@ -20,8 +26,9 @@ You get the open list, the human's latest message, and the agent's latest reply.
 - Keep the "id" of each kept item. Give each new item the id "new".
 - "text": one short imperative line, 12 words or fewer. For a question, write the question itself.
 - "command": the exact shell command when the action is to run one; otherwise leave it out.
+- Never list one task twice. A task is an "action" or a "question", not both. When the agent waits for a go-ahead to do it, it is a question; drop the action.
 
-Reply with JSON only, no prose and no code fence: {"items":[{"id":"...","kind":"action"|"question","text":"...","command":"..."}]}`
+Reply with JSON only, no prose and no code fence: {"items":[{"id":"...","kind":"action"|"question","owner":"you"|"agent","text":"...","command":"..."}]}`
 
 let model = 'haiku'
 let lastPrompt = ''
@@ -41,6 +48,7 @@ function parse(text: string): ActionItem[] | null {
       if (!kind || !body) return []
       const item: ActionItem = { id: String(one.id ?? 'new'), kind, text: body }
       if (typeof one.command === 'string' && one.command.trim()) item.command = one.command.trim()
+      if (kind === 'action') item.owner = one.owner === 'agent' ? 'agent' : 'you'
       return [item]
     })
   } catch {
@@ -65,7 +73,7 @@ function refresh($: EngineInterface, prompt: string, isRebuild: boolean) {
         return
       }
       const known = new Set(before.map(i => i.id))
-      const list = next.map(i => (known.has(i.id) && !isRebuild ? i : { ...i, id: `a${++counter}` }))
+      const list = dedupe(next).map(i => (known.has(i.id) && !isRebuild ? i : { ...i, id: `a${++counter}` }))
       await update($, items, () => list)
       const added = list.filter(i => !known.has(i.id)).length
       if (added && !isRebuild) $.ui.toast(`${added} new item${added === 1 ? '' : 's'} for you`)
@@ -74,6 +82,32 @@ function refresh($: EngineInterface, prompt: string, isRebuild: boolean) {
       await update($, isUpdating, () => false)
     }
   }).catch(() => undefined)
+}
+
+const WORD = /[a-z0-9]+/g
+const STOP = new Set(['the', 'a', 'an', 'to', 'and', 'or', 'of', 'in', 'on', 'for', 'it', 'is', 'you', 'me', 'my', 'your', 'this', 'that', 'should', 'shall', 'do', 'i', 'we'])
+const words = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => !STOP.has(w)))
+
+// True when two lines name the same task: most of their words are the same.
+function isSameTask(a: ActionItem, b: ActionItem) {
+  const x = words(a.text)
+  const y = words(b.text)
+  if (!x.size || !y.size) return false
+  let shared = 0
+  for (const w of x) if (y.has(w)) shared++
+  return shared / Math.min(x.size, y.size) >= 0.6
+}
+
+// A task in both boxes keeps one place: a go-ahead the agent waits on stays a question,
+// a task only the person can do stays an action.
+function dedupe(list: ActionItem[]) {
+  const actions = list.filter(i => i.kind === 'action')
+  return list.filter(item => {
+    if (item.kind === 'action') {
+      return item.owner !== 'agent' || !list.some(q => q.kind === 'question' && isSameTask(q, item))
+    }
+    return !actions.some(a => a.owner !== 'agent' && isSameTask(a, item))
+  })
 }
 
 function showStatus($: EngineInterface, list: ActionItem[]) {
@@ -182,67 +216,61 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey || list.length === 0) return next(e)
 
     const { Box, Text, Button } = $.ui.resolve(e)
-    const todos = list.filter(i => i.kind === 'action')
+    // The tasks only you can do come first.
+    const todos = list.filter(i => i.kind === 'action' && i.owner !== 'agent').concat(list.filter(i => i.kind === 'action' && i.owner === 'agent'))
     const questions = list.filter(i => i.kind === 'question')
     const boxes = (todos.length ? 1 : 0) + (questions.length ? 1 : 0)
 
     // Side by side when there is room, else one box above the other.
-    // Each box takes 4 rows for its border, its title and the blank line under it.
+    // A band taller than the room scrolls, so every item shows in full.
     const isWide = boxes === 2 && e.props.bodyColumns >= 100
-    let todoRows: number
-    let askRows: number
-    if (isWide || boxes === 1) {
-      const room = Math.max(1, e.props.maxRows - 4)
-      todoRows = Math.min(todos.length, room)
-      askRows = Math.min(questions.length, room)
-    } else {
-      const room = Math.max(2, e.props.maxRows - 8)
-      askRows = Math.min(questions.length, Math.max(1, Math.floor(room / 2)))
-      todoRows = Math.min(todos.length, room - askRows)
-      askRows = Math.min(questions.length, room - todoRows)
+
+    const row = (item: ActionItem, n: number) => {
+      const isAgents = item.kind === 'action' && item.owner === 'agent'
+      return (
+        <Box>
+          <Text color={item.kind === 'question' ? 'cyan' : isAgents ? 'gray' : 'yellow'}>
+            {item.kind === 'question' ? '? ' : isAgents ? '↻ ' : '▸ '}
+          </Text>
+          <Box flexGrow={1}>
+            <Text wrap="wrap" dimColor={isAgents}>
+              {item.text}
+              {item.command ? <Text dimColor> `{item.command}`</Text> : null}
+              {isAgents ? <Text dimColor italic> · the agent can do this</Text> : null}
+            </Text>
+          </Box>
+          <Text> </Text>
+          <Button
+            key={`done-${item.id}`}
+            label="Done"
+            plain
+            hotkey={n <= 9 ? String(n) : undefined}
+            onPress={() => dismiss($, item.id)}
+          />
+        </Box>
+      )
     }
 
-    const row = (item: ActionItem, n: number) => (
-      <Box>
-        <Text color={item.kind === 'question' ? 'cyan' : 'yellow'}>{item.kind === 'question' ? '? ' : '▸ '}</Text>
-        <Box flexGrow={1}>
-          <Text wrap="truncate-end">
-            {item.text}
-            {item.command ? <Text dimColor> `{item.command}`</Text> : null}
-          </Text>
-        </Box>
-        <Text> </Text>
-        <Button
-          key={`done-${item.id}`}
-          label="Done"
-          plain
-          hotkey={n <= 9 ? String(n) : undefined}
-          onPress={() => dismiss($, item.id)}
-        />
-      </Box>
-    )
-
-    const box = (kind: ActionItem['kind'], title: string, color: string, group: ActionItem[], shown: number, first: number, isFirst: boolean) =>
+    const box = (kind: ActionItem['kind'], title: string, color: string, group: ActionItem[], first: number, isFirst: boolean) =>
       group.length > 0 && (
         <Box flexDirection="column" flexGrow={1} borderStyle="round" borderColor={color} paddingX={1}>
           <Box marginBottom={1}>
             <Box flexGrow={1}>
               <Text bold color={color}>
                 {title} ({group.length})
-                {group.length > shown ? <Text dimColor> · {group.length - shown} more</Text> : null}
                 {busy && isFirst ? <Text dimColor> · updating…</Text> : null}
               </Text>
             </Box>
             <Button key={`clear-${kind}`} label="Clear" plain onPress={() => clearKind($, kind)} />
           </Box>
-          {group.slice(0, shown).map((item, i) => row(item, first + i))}
+          {group.map((item, i) => row(item, first + i))}
         </Box>
       )
 
     return (
       <Box flexDirection={isWide ? 'row' : 'column'}>
-        {box('action', 'To do', 'yellow', todos, todoRows, 1, true)}
-        {box('question', 'Questions', 'cyan', questions, askRows, todoRows + 1, todos.length === 0)}
+        {box('action', 'To do', 'yellow', todos, 1, true)}
+        {box('question', 'Questions', 'cyan', questions, todos.length + 1, todos.length === 0)}
       </Box>
     )
   })

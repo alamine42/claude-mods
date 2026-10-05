@@ -82,10 +82,11 @@ Change them in the Claude Code config menu, or under `pluginConfigs.ci-pipeline`
 
 When you come back to a long session, the asks for you are easy to miss in the text. This mod lists them above the prompt, in two boxes:
 
-- **To do** (`▸`): an action for you, such as a command to run or a PR to check. It shows the exact command when there is one.
-- **Questions** (`?`): a question the agent waits on.
+- **To do** (`▸`): a task only you can do, such as a check in the app or a test by hand. It shows the exact command when there is one.
+- **To do, agent can do** (`↻`, dim): a task the agent asked you to do but could do itself. Tell the agent to do it, or do it yourself.
+- **Questions** (`?`): a question the agent waits on. A request for your go-ahead ("Shall I push?") is a question too.
 
-Each item has a **Done** button. When the box has focus, keys `1`–`9` press it. **Clear** empties one box. The boxes sit side by side when the window is wide enough. The status line shows a count, for example `Your move: 2 actions, 1 question`.
+Each item has a **Done** button. When the box has focus, keys `1`–`9` press it. **Clear** empties one box. The boxes sit side by side when the window is wide enough. Long items wrap, and a long list scrolls. A task shows in one box only. The status line shows a count, for example `Your move: 2 actions, 1 question`.
 
 **How it works.** When a reply ends, the mod sends the reply, your last message, and the open list to a small model. The model returns the new list. It adds new asks. It removes the asks that you answered or that the agent did. When the mod loads or a session resumes, it reads the last few messages.
 
