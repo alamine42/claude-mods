@@ -88,7 +88,7 @@ When you come back to a long session, the asks for you are easy to miss in the t
 
 Each item has a **Done** button. When the box has focus, keys `1`–`9` press it. **Clear** empties one box. The boxes sit side by side when the window is wide enough. Long items wrap, and a long list scrolls. A task shows in one box only. The status line shows a count, for example `Your move: 2 actions, 1 question`.
 
-**How it works.** When a reply ends, the mod sends the reply, your last message, and the open list to a small model. The model returns the new list. It adds new asks. It removes the asks that you answered or that the agent did. When the mod loads or a session resumes, it reads the last few messages.
+**How it works.** When a reply ends, the mod sends the reply, your last message, and the open list to a small model. The model returns the new list. It adds new asks. It removes the asks that you answered or that the agent did. When you send a message, the mod also checks it at once and clears the questions it answers, so they do not wait for the reply to end. When the mod loads or a session resumes, it reads the last few messages.
 
 **Commands**
 

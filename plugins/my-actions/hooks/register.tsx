@@ -21,6 +21,7 @@ For each "action", set "owner":
 Not items: work the agent did, work the agent says it will do, findings, summaries, and offers the agent makes in passing with no real need for an answer.
 
 You get the open list, the human's latest message, and the agent's latest reply. Return the new open list:
+- Never add back a question that the human's message answers.
 - Keep an open item unless the human's message answers it, the human says it is done, or the reply shows it is done or no longer needed.
 - Add new items from the agent's latest reply. Do not add an item that is already on the list.
 - Keep the "id" of each kept item. Give each new item the id "new".
@@ -32,6 +33,7 @@ Reply with JSON only, no prose and no code fence: {"items":[{"id":"...","kind":"
 
 let model = 'haiku'
 let lastPrompt = ''
+let lastReply = ''
 let counter = 0
 let chain: Promise<void> = Promise.resolve()
 
@@ -110,6 +112,44 @@ function dedupe(list: ActionItem[]) {
   })
 }
 
+const ANSWERED = `A human sent a message to a coding agent. Decide which open items on the human's list the message settles.
+
+An item is settled when the message answers the question (a plain "yes", "no", "go ahead" or a choice answers the question the agent asked last), or says the task is done, or says to drop it.
+
+Reply with JSON only, no prose and no code fence: {"settled":["id", ...]}. Use [] when the message settles nothing.`
+
+// Clears the items the person's message settles, as soon as they send it.
+function settle($: EngineInterface, message: string) {
+  chain = chain.then(async () => {
+    const open = await read($, items)
+    if (!open.length || !message.trim()) return
+    const r = await $.model.complete({
+      model,
+      system: ANSWERED,
+      prompt: [
+        `OPEN ITEMS:\n${JSON.stringify({ items: open })}`,
+        `AGENT'S LAST REPLY:\n${clip(lastReply, 8000) || '(none)'}`,
+        `HUMAN'S MESSAGE:\n${clip(message, 4000)}`,
+      ].join('\n\n'),
+      maxTokens: 300,
+      timeoutMs: 20000,
+    })
+    if (!r.isAnswered) return
+    const start = r.text.indexOf('{')
+    const end = r.text.lastIndexOf('}')
+    if (start < 0 || end <= start) return
+    try {
+      const { settled } = JSON.parse(r.text.slice(start, end + 1)) as { settled?: unknown }
+      if (!Array.isArray(settled) || !settled.length) return
+      const ids = new Set(settled.map(String))
+      await update($, items, l => l.filter(one => !ids.has(one.id)))
+      showStatus($, await read($, items))
+    } catch {
+      // A reply that is not JSON settles nothing; the end-of-turn update still runs.
+    }
+  }).catch(() => undefined)
+}
+
 function showStatus($: EngineInterface, list: ActionItem[]) {
   const actions = list.filter(i => i.kind === 'action').length
   const questions = list.length - actions
@@ -131,10 +171,11 @@ async function dismiss($: EngineInterface, id: string | null) {
 
 // On load or resume, read the last exchanges so the box is right before the next turn ends.
 async function bootstrap($: EngineInterface) {
-  if ((await read($, items)).length) return
   const rows = (await $.session.messages()).filter(row => row.text.trim())
   const lastAgent = rows.map(row => row.role).lastIndexOf('assistant')
   if (lastAgent < 0) return
+  lastReply = rows[lastAgent].text
+  if ((await read($, items)).length) return
   const recent = rows
     .slice(Math.max(0, lastAgent - 5), lastAgent + 1)
     .map(row => `${row.role === 'user' ? 'HUMAN' : 'AGENT'}: ${row.text.trim()}`)
@@ -169,6 +210,8 @@ export const register: Register = (on, options) => {
 
   on('prompt.submit', ($, e, next) => {
     lastPrompt = e.text
+    // The model call outlives this dispatch, so start it from a timer.
+    $.clock.after(10, () => settle($, e.text))
 
     return next(e)
   })
@@ -176,6 +219,7 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId || !e.answer.trim()) return result
+    lastReply = e.answer
 
     const open = await read($, items)
     const prompt = [
